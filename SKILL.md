@@ -1,6 +1,6 @@
 ---
 name: homey-cli
-description: Interact with a Homey Pro smart-home hub via the official Homey CLI (`homey api <manager> <op>`). Use to read & export flows (incl. advanced flows), discover flow cards per installed app, build or modify standard & advanced flows from JSON, control devices, set capabilities, trigger flows, manage moods, and call any local Homey API endpoint. Replaces the public `mcp__claude_ai_Homey__*` MCP — covers all 19 MCP tools plus full advanced-flow JSON schema, app inventory, device settings, ~50 API managers, and HomeyScript as a documented fallback. Triggers on Homey Pro, Athom, smart-home automation, advanced flows, `homey api`, Z-Wave/Zigbee/Matter/Thread inventory, HomeyScript.
+description: "Use the official Homey CLI to inspect and modify Homey Pro flows, devices, capabilities, moods, and local API resources."
 ---
 
 # Homey CLI
