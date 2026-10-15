@@ -1,190 +1,174 @@
-# homey-cli skill
+# Homey CLI skill for ChatGPT and Codex
 
-A Claude Code / agent skill for driving a **Homey Pro** smart-home hub through the official `homey` CLI (`homey api <manager> <op>`). Replaces the public `mcp__claude_ai_Homey__*` MCP and adds full advanced-flow JSON support, app inventory, device settings, and ~50 API managers.
+A local-first adaptation of [timvdhoorn/homey-cli-skill](https://github.com/timvdhoorn/homey-cli-skill) for inspecting and managing Homey Pro through the official Homey CLI. The initial target is Homey Pro 2026.
 
-## Features
+The skill packages instructions, references and templates. Running it requires a host with local command execution, an installed Homey CLI, Athom authentication and network access to the hub or Athom service.
 
-- 📖 **Read everything**: devices, zones, flows, apps, moods, alarms, insights, system info (~50 managers)
-- 🔍 **Discover flow cards** per installed app, every trigger / condition / action with full `args` schema
-- 🧩 **Build standard flows**: trigger + AND/OR condition groups + then/else actions
-- 🕸️ **Build advanced flows**: full graph editor with 8 card types (`trigger`, `condition`, `action`, `start`, `delay`, `all`, `any`, `note`)
-- 🎛️ **Control devices**: turn on/off, dim, set thermostat, set lock, set mood, rename, move zones
-- 🚀 **Trigger flows** on demand, standard and advanced
-- 📦 **Manage apps**: enable, disable, restart, list versions
-- 🛠️ **Raw API escape hatch**: POST / PUT / DELETE against any manager endpoint
-- 📜 **HomeyScript fallback** for logic flows can't express, with a decision tree on when to use
-- 🌐 **Token-mode (LAN)**: bypass cloud and hit the Homey directly over the local network
-- 🗂️ **Templates included**: 4 flow skeletons + 8 card primitives + 3 HomeyScript starters
-- ✅ **10-point validation checklist** before every flow push
-- 🛡️ **Guardrails**: risk tiers, active-Homey check, `broken: false` distrust, backup-before-update
-- 🔁 **Drop-in MCP replacement**: all 19 public `mcp__claude_ai_Homey__*` tools have a CLI equivalent
-- 💡 **Flow suggestions**: ask *"suggest flows"* / *"wat kan ik automatiseren"* — the agent generates ideas from your device inventory and shows them in a browser picker (filters, status tags, want/maybe/skip/done) or terminal multi-select; agent auto-continues on submit and can build the picked flows next
+## Refactoring status
 
-See [What the skill can do](#what-the-skill-can-do) below for the long version.
+**Use the `feat/chatgpt-local` branch for the ChatGPT/Codex version.** The default `master` branch still contains the upstream Claude implementation; [PR #1](https://github.com/dereri/homey-cli-chatgpt-skill/pull/1) was closed without merging. The installation commands below explicitly select the refactored branch.
 
-## Install as a Claude Code skill
+The port has passed 13 offline tests. Live authentication, hub connectivity and flow behavior on Homey Pro 2026 remain unverified.
 
-### Quickest: `npx skills`
+## Capabilities
 
-```bash
-npx skills add timvdhoorn/homey-cli-skill
+- Inspect devices, zones, installed apps, standard flows and Advanced Flows.
+- Discover actual flow-card definitions, arguments and tokens before designing automations.
+- Prepare, structurally validate, create and update standard or Advanced Flow JSON.
+- Suggest automations from the connected hub's inventory and existing flow behavior, with selection in chat.
+- Control device capabilities and manage apps within the user's authorized scope.
+- Use supported raw API operations or HomeyScript when the normal flow workflow is insufficient.
+- Explore supported Zigbee and other manager diagnostics through installed CLI help and schemas.
+
+Available operations depend on the installed CLI, Homey firmware, apps and permissions. Templates contain placeholders that must be replaced using live discovery.
+
+## Requirements
+
+- A ChatGPT Work/Codex environment that can run commands on your local computer.
+- Git and a supported Node.js LTS release with npm. The bundled validator and tests require Node.js 20 or later; also check the Homey package's engine requirements.
+- The official `homey` npm package and an Athom account with access to the intended hub.
+- Network access from the local execution environment to Homey or Athom.
+- Optionally, jq for CLI filtering. `--jq` runs locally and requires the jq executable; it is not server-side filtering.
+
+A normal cloud chat does not gain local shell or Homey access by receiving this README or the skill files.
+
+## Install on Windows
+
+Open PowerShell. Choose a new directory named `homey-cli` so the folder matches the skill's metadata:
+
+```powershell
+$skillDir = Join-Path $HOME '.agents\skills\homey-cli'
+New-Item -ItemType Directory -Path (Split-Path -Parent $skillDir) -Force | Out-Null
+git clone --branch feat/chatgpt-local --single-branch https://github.com/dereri/homey-cli-chatgpt-skill.git $skillDir
+Set-Location $skillDir
+
+npm install -g homey
+homey --version
+homey api --help
 ```
 
-Installs the skill straight from GitHub into your skills folder. Restart Claude Code and you're done. For manual control over the install location, use the git options below.
+The `.agents\skills` location is for local Codex discovery. Refresh or restart the host, then invoke `$homey-cli`. ChatGPT Work installation/discovery depends on the host; placing files in this directory alone does not prove the skill is available there. In a development session with local file access, ask the agent to read the checkout's `SKILL.md` explicitly.
 
-### Manual install (git)
+If you already cloned the repository elsewhere, keep that checkout and switch branches:
 
-Claude Code auto-loads any folder matching `<skill-name>/SKILL.md` under one of:
-
-- `~/.claude/skills/<skill-name>/`: available in every project (recommended for personal use)
-- `<project>/.claude/skills/<skill-name>/`: available only in that project
-
-The folder name **must** be `homey-cli` (matches the `name:` in `SKILL.md` frontmatter).
-
-#### Option A: user-level (recommended, all projects)
-
-Clone straight into your global Claude Code skills folder:
-
-```bash
-mkdir -p ~/.claude/skills
-git clone https://github.com/timvdhoorn/homey-cli-skill.git ~/.claude/skills/homey-cli
+```powershell
+git fetch origin
+git switch feat/chatgpt-local
+git pull --ff-only
 ```
 
-Done. Restart Claude Code and the skill is available everywhere.
+Run those commands from the existing checkout. Do not clone over a directory containing local work.
 
-#### Option B: project-level (single project)
+## Authenticate and identify the new hub
 
-```bash
-mkdir -p /path/to/project/.claude/skills
-git clone https://github.com/timvdhoorn/homey-cli-skill.git /path/to/project/.claude/skills/homey-cli
+```powershell
+homey login
+homey whoami
+homey list --json
 ```
 
-#### Option C: clone elsewhere + symlink (advanced)
+Complete Athom's browser sign-in yourself. Find the actual ID of the new Homey Pro 2026, especially if the old Homey remains on the account. Replace the placeholder below:
 
-If you want to keep one working copy and link it into multiple locations (e.g. you're hacking on the skill yourself):
-
-```bash
-git clone https://github.com/timvdhoorn/homey-cli-skill.git ~/src/homey-cli-skill
-ln -s ~/src/homey-cli-skill ~/.claude/skills/homey-cli
+```powershell
+$homeyId = 'REPLACE_WITH_NEW_HOMEY_ID'
+homey select --id $homeyId
+homey select current
 ```
 
-### Verify it loaded
+Use an explicit ID rather than an interactive selection prompt. The selected hub is cached locally, so every subsequent API call must also include `--homey-id $homeyId`.
 
-Start a new Claude Code session and ask something like:
+## Verify read-only access
 
-> List my Homey devices.
-
-Claude Code will invoke the `homey-cli` skill automatically. You can also force-invoke via `Skill(skill: "homey-cli")` or `/skills` if your build exposes that.
-
-### Updating
-
-```bash
-cd ~/.claude/skills/homey-cli && git pull
+```powershell
+homey api system get-info --json --homey-id $homeyId
+homey api devices get-devices --json --homey-id $homeyId
+homey api apps get-apps --json --homey-id $homeyId
+homey api flow get-flows --json --homey-id $homeyId
+homey api flow get-advanced-flows --json --homey-id $homeyId
 ```
 
-(or `cd` to wherever you cloned it for Option C).
+Check the command's exit status and output before continuing. If an operation is unavailable, inspect the installed command surface:
 
-## Prerequisites
-
-```bash
-npm install -g homey            # or: bun add -g homey
-homey --version                  # expect 4.x+
-homey login                      # browser OAuth with Athom
-homey select --id <HOMEY_ID>     # non-interactive selection
-homey select current             # verify
+```powershell
+homey api --help
+homey api devices get-devices --help
+homey api schema --manager devices --operation get-devices --json --homey-id $homeyId
 ```
 
-## What the skill can do
+First agent request:
 
-Six capabilities, grouped by risk tier (Safe / Medium / High):
+> Use the homey-cli skill to inspect my new Homey Pro. Verify its ID, then list devices, apps and standard/advanced flows. Read only; do not change anything.
 
-### 1. Read state (Safe)
-- List **devices** with id, name, zone, class, capabilities, available status.
-- List **zones** with parent/child relations.
-- List **flows** (standard + advanced) with enabled/broken status.
-- List **apps** with version + author.
-- List **moods** (light scenes).
-- List **alarms**, **users**, **insights/logs**, **notifications**, **geolocation**, **system info**, **backups**.
-- ~50 managers reachable via `homey api <manager> get-*`; full index in `references/managers-cheatsheet.md`.
+See [local setup](https://github.com/dereri/homey-cli-chatgpt-skill/blob/feat/chatgpt-local/references/local-setup.md) for troubleshooting and [PowerShell recipes](https://github.com/dereri/homey-cli-chatgpt-skill/blob/feat/chatgpt-local/references/recipes.md) for JSON exports and backups.
 
-### 2. Discover card capabilities (Safe)
-- Enumerate **every flow card** (triggers / conditions / actions) of every installed app, including `id`, `args` schema, expected `droptoken`, emitted `tokens`.
-- Filter by app (`select(.ownerUri | startswith("homey:app:com.sonos"))`) or by keyword in title.
-- 12 argument types covered (device, autocomplete, dropdown, number, range, color, datetime, etc.), see `references/flow-cards.md`.
+## Flow validation and writes
 
-### 3. Build & modify flows (High)
-- **Standard flows**: single trigger, AND/OR condition groups, then/else actions, optional delay + duration on each action.
-- **Advanced flows**: graph-based with 8 card types: `trigger`, `condition`, `action`, `start`, `delay`, `all`, `any`, `note`.
-- 8-step workflow from intent → discovery → JSON composition → validation → push → verify.
-- 10-point validation checklist before every push.
-- 4 ready-to-customize flow templates + 8 single-card primitives in `assets/flow-templates/`.
-- Canvas-coordinate calibration so cards don't overlap in the editor.
-- Round-trip edit pattern: backup → edit → push → verify with diff.
+The refactored workflow discovers live card definitions, resolves arguments, prepares JSON, validates it, backs up existing configuration, writes within the authorized scope and reads the result back.
 
-### 4. Control state (Medium)
-- **Set capability values**: turn lights on/off, set dim, set thermostat, set lock, etc. (`set-capability-value`).
-- **Trigger flows**: standard and advanced (`trigger-flow` / `trigger-advanced-flow`).
-- **Set a mood** (light scene).
-- **Rename / move devices** between zones (`update-device`).
-- **Enable / disable / restart apps**.
-- **Set device settings** (per-driver settings dict).
-- Bulk operations via loops; example in `references/recipes.md`.
+Run these commands from the refactored skill directory:
 
-### 5. Escape hatches
-- **Raw API**: hit any of the ~50 manager endpoints directly (`homey api raw -X POST --path ...`).
-- **HomeyScript**: JS that runs server-side on Homey, for logic flows can't express. Decision tree in `references/homeyscript.md` gates appropriateness; 3 templates included.
-- **Token-mode**: bypass cloud and hit the Homey directly over LAN with a bearer token.
-
-### 6. Flow suggestions (Safe)
-- Surface flow ideas and let you pick which to build. Three sources:
-  - **Agent-generated** — say *"suggest flows"* / *"wat kan ik automatiseren"* and the agent generates ideas from your device inventory + existing flows.
-  - `wishlist.json` in your project — structured items the agent reads directly.
-  - `WISHLIST.md` in your project — light markdown convention (`## Category` + `- **Title** — desc`).
-- **Browser mode**: rich UI (filters per category/status, search, want/maybe/skip/done per item) served via the `superpowers:brainstorming` visual-companion server. Best for ≥6 items or thorough triage.
-- **Terminal mode**: `AskUserQuestion` with `multiSelect` directly in chat. No browser, no server. Best for ≤6 items or quick passes.
-- **Auto-continue**: after submit the agent picks up the selection without you typing in terminal (fallback: just tell the agent you submitted).
-- **Follow-through**: agent's natural next step is to build the picked flows via Capability 3 (one at a time, with confirmation).
-- Triggers, inventory query patterns, JSON schema, markdown parsing, event contract: `references/flow-suggestions.md`.
-
-![Flow suggestions picker — browser mode](assets/wishlist-picker/screenshot.png)
-
-### What it replaces
-
-This skill is a superset of the public `mcp__claude_ai_Homey__*` MCP. All 19 MCP tools have a CLI equivalent (mapping in `references/mcp-migration.md`). Beyond the MCP: advanced-flow JSON support, app inventory with versions, device settings, raw API, HomeyScript management.
-
-### Guardrails baked in
-
-- **Active-Homey discipline**: explicit `homey select current` confirmation before every state change, to avoid accidentally targeting a family member's Homey.
-- **Risk tiers**: every operation classified Safe / Medium / High, with required steps per tier.
-- **`broken: false` distrust**: flows can reference deleted devices/zones and still report healthy; post-push verification re-resolves every ref.
-- **Backup-before-update**: `update-*-flow` is PUT not PATCH; templates always back up first.
-- **Non-interactive flags**: agent contexts have no stdin; skill documents which commands hang and how to avoid them.
-
-## Layout
-
-```
-SKILL.md                            # skill body, entry point
-references/
-  managers-cheatsheet.md            # per-manager command index
-  flow-cards.md                     # card taxonomy, 12 arg types, tokens
-  flow-json-schema.md               # JSON shape + 10-point validation checklist
-  homeyscript.md                    # fallback when flows can't express logic
-  recipes.md                        # backup, audit, bulk ops
-  pitfalls.md                       # active-Homey discipline, broken:false trap, etc.
-  mcp-migration.md                  # 19-tool MCP → CLI mapping
-  flow-suggestions.md               # flow-suggestions workflow (triggers, generation, browser + terminal modes)
-assets/
-  flow-templates/                   # 4 ready-to-customize flow skeletons
-  flow-templates/card-primitives/   # 8 minimal card fragments
-  homeyscript-templates/            # 3 minimal scripts
-  wishlist-picker/template.html     # self-contained picker UI for browser mode
-  wishlist-picker/screenshot.png    # README screenshot of the picker UI
+```powershell
+node --test tests/validate-flow.test.mjs
+node scripts/validate-flow.mjs "C:\path\to\candidate-flow.json"
 ```
 
-## Contributing
+No npm dependencies or Homey access are needed for these offline checks.
 
-Edits made in a project that symlinks this skill flow straight back here on disk, so commit and push from this directory.
+The structural validator checks required fields, placeholders, UUID format, graph references, supported output names, join inputs and executable-card reachability. Decorative notes need not be reachable. Existing card UUIDs are preserved when editing; newly added cards receive fresh UUIDs.
 
-## License
+**A structural pass does not establish that a flow works on Homey.** Live card IDs, argument schemas, device/zone existence, tokens, capabilities, authorization and physical effects require separate checks. Do not rely on `broken: false` alone.
 
-MIT.
+New test flows are prepared disabled by default. Creating, activating or triggering them must be covered by the user's request. Back up persistent configuration before updates and verify the hub identity immediately before each write.
+
+## Changes from the Claude version
+
+| Area | ChatGPT/Codex adaptation |
+|---|---|
+| Agent tools | Uses the local shell exposed by the host; removes reliance on Claude-specific invocation and tool names |
+| Automation selection | Numbered suggestions and selections in chat |
+| Windows support | PowerShell setup, quoted JSON-file arguments and explicit UTF-8 backup recipes |
+| Hub targeting | Verified Homey ID on every API call |
+| Validation | Dependency-free Node structural checker plus separate live-reference checks |
+| Skill metadata | `agents/openai.yaml` for OpenAI host UI metadata |
+
+Upstream Homey references, flow templates, community examples and HomeyScript starters remain available. Some domain references still contain Bash examples; translate these before using them in PowerShell.
+
+The legacy HTML picker remains as an upstream asset. It is not connected to ChatGPT and does not provide click-to-resume interaction or automatic continuation. No Claude superpowers server is required.
+
+## Repository guide
+
+The links below point to the refactored branch.
+
+| Path | Purpose |
+|---|---|
+| [SKILL.md](https://github.com/dereri/homey-cli-chatgpt-skill/blob/feat/chatgpt-local/SKILL.md) | Agent entry point and workflow |
+| [agents/openai.yaml](https://github.com/dereri/homey-cli-chatgpt-skill/blob/feat/chatgpt-local/agents/openai.yaml) | Display name, description and starter prompt |
+| [references/](https://github.com/dereri/homey-cli-chatgpt-skill/tree/feat/chatgpt-local/references) | Setup, PowerShell recipes, discovery, schemas and troubleshooting |
+| [assets/flow-templates/](https://github.com/dereri/homey-cli-chatgpt-skill/tree/feat/chatgpt-local/assets/flow-templates) | Standard/advanced skeletons, card primitives and community examples |
+| [assets/homeyscript-templates/](https://github.com/dereri/homey-cli-chatgpt-skill/tree/feat/chatgpt-local/assets/homeyscript-templates) | HomeyScript starters |
+| [scripts/validate-flow.mjs](https://github.com/dereri/homey-cli-chatgpt-skill/blob/feat/chatgpt-local/scripts/validate-flow.mjs) | Offline structural validator |
+| [tests/validate-flow.test.mjs](https://github.com/dereri/homey-cli-chatgpt-skill/blob/feat/chatgpt-local/tests/validate-flow.test.mjs) | Validator and skill-integrity tests |
+
+## Updating and contributing
+
+Update an existing refactored checkout with:
+
+```powershell
+git switch feat/chatgpt-local
+git pull --ff-only
+```
+
+To review upstream improvements, add the original repository once and fetch its changes:
+
+```powershell
+git remote add upstream https://github.com/timvdhoorn/homey-cli-skill.git
+git fetch upstream
+```
+
+Review changes before merging so Claude-specific dependencies are not reintroduced. When the port is integrated into the default branch, update this README's branch status, clone command and branch-specific links together.
+
+Keep credentials, authentication files, household exports and backups outside this public checkout. The refactored branch's ignore rules cover common local export/configuration paths, but they do not replace checking staged files.
+
+## Attribution
+
+Adapted from [timvdhoorn/homey-cli-skill](https://github.com/timvdhoorn/homey-cli-skill). The upstream README identifies the project as MIT; the imported tree did not include a standalone LICENSE file. Preserve upstream attribution and any license notices.
