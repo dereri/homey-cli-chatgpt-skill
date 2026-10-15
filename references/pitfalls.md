@@ -7,7 +7,7 @@ Gotchas observed in practice while using the Homey CLI. Read this when troublesh
 - [Active-Homey discipline](#active-homey-discipline)
 - [`broken: false` lies about dead refs](#broken-false-lies-about-dead-refs)
 - [Interactive prompts hang in agent contexts](#interactive-prompts-hang-in-agent-contexts)
-- [`--jq` is CLI-side, not local `jq`](#--jq-is-cli-side-not-local-jq)
+- [`--jq` requires local jq](#--jq-requires-local-jq)
 - [App `name` can be string or i18n object](#app-name-can-be-string-or-i18n-object)
 - [`set-capability-value` primitives need `--request-json`](#set-capability-value-primitives-need---request-json)
 - [Active-Homey cache is on-disk](#active-homey-cache-is-on-disk)
@@ -32,7 +32,7 @@ Gotchas observed in practice while using the Homey CLI. Read this when troublesh
 
 Failure mode: a script intended for Homey A runs against Homey B because the cache was last set to B in another terminal hours ago. For read ops this is annoying. For write ops (update-flow, delete-device, uninstall-app) this is data loss.
 
-**Rule:** run `homey select current` as the first command of any session and immediately before every Medium- or High-tier operation. Never trust prior selection across the gap between two operations.
+**Rule:** verify selection with `homey select current`, and pass the verified `--homey-id <ID>` on every API call. Never rely on cached selection alone.
 
 To set the active Homey non-interactively:
 
@@ -61,11 +61,9 @@ Known interactive entrypoints:
 
 Always pass explicit flags. `homey select --id <id>` is the workaround for `homey select`.
 
-## `--jq` is CLI-side, not local `jq`
+## `--jq` requires local jq
 
-The `--jq` flag invokes the Homey CLI's bundled jq, not the user's local `jq`. Behavior is *almost* identical but errors surface with the prefix `"jq failed:"` and some less-common operators may differ in version. If a `--jq` expression fails mysteriously, drop `--jq`, output `--json`, and pipe to local `jq` to compare.
-
-A common failure: assuming the output supports `.value.name.en` when the field is actually a plain string in some apps and an i18n object in others — see next pitfall.
+The official CLI requires a local jq executable in PATH for --jq. Filtering occurs after the response is fetched; it is not server-side. If jq is absent, use --json with PowerShell ConvertFrom-Json or Node. Verify this behavior against installed CLI help.
 
 ## App `name` can be string or i18n object
 
@@ -248,6 +246,6 @@ Source: [licht-gaat-zelf-weer-aan-zonder-flow-beweging/73832](https://community.
 
 ## Risk tiers
 
-The full Safe / Medium / High table with required steps lives in `SKILL.md` under the "Risk tiers" heading. Treat it as the single source of truth.
+Follow SKILL.md for authorization, backups and verification. Classify actions by their actual effect, including downstream device behavior; a flow trigger is not automatically low risk.
 
 When in doubt, treat the operation as one tier higher than feels intuitive. Smart-home state is hard to roll back — every device that depends on a flow inherits that flow's correctness.

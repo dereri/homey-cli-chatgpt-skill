@@ -4,3 +4,12 @@
 docs/
 .claude/
 CLAUDE.md
+node_modules/
+.env
+.env.*
+!.env.example
+.local/
+backups/
+exports/
+homey.local.json
+wishlist.json

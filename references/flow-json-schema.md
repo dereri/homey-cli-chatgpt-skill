@@ -1,6 +1,6 @@
 # Flow JSON Schema
 
-Authoritative reference for the JSON body accepted by `homey api flow create-*` and `update-*`. Card-type definitions come from the public Homey MCP's input schema and are the canonical shape — both `standard` and `advanced` flow forms.
+Working reference for the JSON body accepted by `homey api flow create-*` and `update-*`. These examples originated in the public Homey MCP schema. Verify them against installed CLI schemas and live card definitions. Follow SKILL.md for host tools, explicit target IDs and authorization. Bash examples below require translation on Windows; see recipes.md.
 
 ## Contents
 
@@ -74,7 +74,7 @@ The 8 valid `type` values cover everything the Homey advanced-flow editor offers
 - **"Enkel" in the UI is `"type": "any"` in JSON**, not `"only"`. The most common mistake.
 - `delay.multiplier` is `1` (seconds) or `60` (minutes); `delay.number` is a **string**.
 - `all` / `any` `input[]` entries use the syntax `<source-card-uuid>::<outputName>` where `outputName ∈ {outputSuccess, outputTrue, outputFalse, outputError}`. They join branches into a sync point.
-- Card-IDs (keys of the `cards` object) are UUIDs. Regex: `^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`.
+- Card-IDs (keys of the `cards` object) are UUIDs. Regex: `^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`.
 - `condition.inverted: true` flips the meaning ("is NOT").
 - `note.color` is an enum: `yellow | red | green | blue`. `note.value` is the body text.
 - `x`, `y` are canvas coordinates in the editor — required even when invisible. **Equal x-spacing does not work** because card types render at different widths: `start` ≈ 80px, `action`/`trigger`/`condition` ≈ 350px, `delay` ≈ 150px. Use variable offsets based on the preceding card type — rough rule:
@@ -139,7 +139,7 @@ Standard flows are linear, not graph-based:
 
 ## UUID generation
 
-Generate a fresh UUID for every card. **Never reuse UUIDs across flows** — Homey treats them as global identifiers within a flow and stale references will surface as "broken" later.
+Generate fresh UUIDs for cards in a new flow and newly added cards. Preserve existing card UUIDs when editing an existing flow so its edges and tokens stay consistent.
 
 One-liner options (pick whichever is on the system):
 
@@ -159,20 +159,20 @@ Homey accepts lowercase UUIDs.
 
 ## 10-point validation checklist
 
-Run before every `create-` or `update-` push. Tick each item explicitly in the agent's output — not silently. A no-tick is a stop-and-ask.
+Run applicable checks before every create or update. Summarize passed checks and unresolved issues; block writes on validation failures. Graph-only checks do not apply to standard flows.
 
 1. **UUIDs unique** within the `cards` object.
-2. **UUID pattern** matches `^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`.
+2. **UUID pattern** matches `^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`.
 3. **Card `id` fields exist** in the respective `get-flow-card-<triggers|conditions|actions>` list — catches typos and removed cards.
 4. **All output refs** (`outputSuccess`, `outputTrue`, `outputFalse`, `outputError`) point to UUIDs that exist in this flow's `cards`.
 5. **`all` / `any` `input` refs** use `<uuid>::<outputName>` syntax and the named output actually exists on the source card type (e.g. a `trigger` source only emits `outputSuccess`, not `outputTrue`).
 6. **Device refs in `args`** resolve against `homey api devices get-devices` — the #1 cause of silent-broken flows.
 7. **Zone refs in `args`** resolve against `homey api zones get-zones`.
 8. **Token refs `[[homey:app:<id>|<token>]]`** — the app exists in `homey api apps get-apps`; the token is emitted by an upstream card in this flow's graph.
-9. **No orphan cards** — every card is reachable from a `start` or `trigger` by following output edges.
+9. **No orphan executable cards** — every executable card is reachable from a start or trigger through outputs or join inputs. Decorative notes are exempt.
 10. **Type-specific required fields** complete per the card-type table above (e.g. `note` has `value` + `color`; `delay` has `args.delay.{number, multiplier}`).
 
-No JSON-Schema validator is used. The checklist forces explicit reasoning over silent rubber-stamping.
+Run `node scripts/validate-flow.mjs <payload.json>` for offline structural checks. This is not an authoritative JSON Schema or live validator. Resolve card IDs, argument types, tokens, device/zone references and capability constraints separately against the target hub.
 
 ## Round-trip edit workflow
 

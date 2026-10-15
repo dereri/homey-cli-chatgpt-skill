@@ -1,208 +1,66 @@
-# Recipes
+# PowerShell recipes
 
-Ready-to-paste shell snippets for common operations. Each is self-contained, uses `--json --jq` to keep output small, and writes large dumps to `/tmp` instead of dumping into chat context.
+Use the verified Homey ID in every call. Store household exports outside the public repository.
+The examples below work in Windows PowerShell 5.1 and PowerShell 7. Replace placeholders; inspect installed operation help first.
 
-## Contents
+## Export JSON and detect CLI failures
 
-- [Backup](#backup)
-- [Audit](#audit)
-- [Bulk operations](#bulk-operations)
-- [Search](#search)
-- [Discovery shortcuts](#discovery-shortcuts)
-
-## Backup
-
-### Full snapshot to a timestamped dir
-
-Use before any High-tier mutation, or as a periodic safety net.
-
-```bash
-DIR="/tmp/homey-backup-$(date +%Y%m%d-%H%M%S)" && mkdir -p "$DIR"
-homey api flow get-flows           --json > "$DIR/flows-standard.json"
-homey api flow get-advanced-flows  --json > "$DIR/flows-advanced.json"
-homey api flow get-flow-folders    --json > "$DIR/flow-folders.json"
-homey api devices get-devices      --json > "$DIR/devices.json"
-homey api zones get-zones          --json > "$DIR/zones.json"
-homey api apps get-apps            --json > "$DIR/apps.json"
-homey api moods get-moods          --json > "$DIR/moods.json"
-homey api logic get-variables      --json > "$DIR/logic-variables.json"
-echo "Backup: $DIR"
+```powershell
+$homeyId = 'REPLACE_WITH_VERIFIED_HOMEY_ID'
+function Read-HomeyJson {
+    param([string[]]$CliArguments)
+    $raw = & homey @CliArguments --homey-id $homeyId --json
+    if ($LASTEXITCODE -ne 0) { throw 'Homey CLI read failed; do not continue.' }
+    $parsed = ($raw -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($null -eq $parsed) { throw 'Homey returned no JSON data.' }
+    return $parsed
+}
+$devices = Read-HomeyJson -CliArguments @('api', 'devices', 'get-devices')
+$devices.PSObject.Properties.Value |
+    Select-Object id, name, zoneName, available, capabilities
 ```
 
-### Single flow backup before edit
+Do not assume every response is a dictionary; inspect arrays versus objects before projecting.
 
-```bash
-FLOW_ID="<id>"
-BACKUP="/tmp/homey-flow-$FLOW_ID-$(date +%s).json"
-homey api flow get-advanced-flow --id "$FLOW_ID" --json > "$BACKUP"
-echo "Backup: $BACKUP"
+## Back up one flow before editing
+
+```powershell
+$flowId = 'REPLACE_WITH_FLOW_ID'
+$backupDir = Join-Path $env:LOCALAPPDATA ('HomeySkill\backups\' + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+$before = Read-HomeyJson -CliArguments @('api', 'flow', 'get-advanced-flow', '--id', $flowId)
+$beforePath = Join-Path $backupDir 'before.json'
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($beforePath, ($before | ConvertTo-Json -Depth 100), $utf8)
+Get-Item -LiteralPath $beforePath | Select-Object FullName, Length
 ```
 
-### Export every advanced flow into its own file
+Verify the backup is valid JSON and belongs to the expected flow before editing.
+Backups contain household configuration; keep them private. For standard flows, use get-flow.
 
-```bash
-DIR="/tmp/homey-advflows-$(date +%Y%m%d-%H%M%S)" && mkdir -p "$DIR"
-for id in $(homey api flow get-advanced-flows --json --jq 'keys[]' | tr -d '"'); do
-  homey api flow get-advanced-flow --id "$id" --json > "$DIR/$id.json"
-done
-echo "Exported $(ls "$DIR" | wc -l) advanced flows to $DIR"
+## Prepare, validate, push, read back
+
+Work on a separate after.json; do not overwrite the baseline.
+Preserve existing UUIDs during updates. Use `[guid]::NewGuid().ToString()` for newly added cards.
+Validate from the skill directory:
+```powershell
+$afterPath = Join-Path $backupDir 'after.json'
+node scripts/validate-flow.mjs $afterPath
+if ($LASTEXITCODE -ne 0) { throw 'Flow structure invalid.' }
 ```
 
-## Audit
-
-### List flows with dead device or zone refs
-
-`broken: false` does not catch this. Diff the device/zone refs found in card args against live `get-devices` / `get-zones`.
-
-```bash
-# 1. live device + zone ids
-homey api devices get-devices --json --jq 'keys[]' | tr -d '"' | sort -u > /tmp/live-devices.txt
-homey api zones   get-zones   --json --jq 'keys[]' | tr -d '"' | sort -u > /tmp/live-zones.txt
-
-# 2. device/zone refs used in advanced flows
-homey api flow get-advanced-flows --json --jq '
-  to_entries[] | .key as $flow |
-  .value.cards | to_entries[] |
-  (.value.ownerUri // empty) as $owner |
-  if ($owner | startswith("homey:device:")) then {flow: $flow, ref: $owner} else empty end
-' > /tmp/flow-device-refs.json
-
-# 3. cross-reference
-jq -r '.ref' /tmp/flow-device-refs.json | sed 's|homey:device:||' | sort -u > /tmp/used-devices.txt
-comm -23 /tmp/used-devices.txt /tmp/live-devices.txt
+Also resolve live card/device/zone/token references. Review the diff and authorized scope.
+Only then:
+```powershell
+homey select current
+homey api flow update-advanced-flow --id $flowId --body ("@" + $afterPath) --homey-id $homeyId
+if ($LASTEXITCODE -ne 0) { throw 'Update failed; inspect current state before retrying.' }
+$after = Read-HomeyJson -CliArguments @('api', 'flow', 'get-advanced-flow', '--id', $flowId)
 ```
 
-### List deprecated card usage
+Compare intended fields, ignoring server-managed metadata. Recheck live references. Keep the baseline until the user is satisfied; a restore is another full update requiring validation and authorization.
 
-```bash
-# Deprecated card definitions
-homey api flow get-flow-card-actions --json \
-  --jq '.[] | select(.deprecated == true) | .id' > /tmp/deprecated-action-ids.txt
+## Audit and bulk actions
 
-# Cross-reference with cards used in advanced flows
-homey api flow get-advanced-flows --json --jq '
-  to_entries[] | .key as $flow |
-  .value.cards | to_entries[] |
-  select(.value.type == "action") |
-  {flow: $flow, cardId: .value.id}
-'
-# Manually compare cardId values against /tmp/deprecated-action-ids.txt
-```
-
-### Find disabled flows
-
-```bash
-homey api flow get-flows --json \
-  --jq 'to_entries | map(select(.value.enabled == false) | {id: .key, name: .value.name})'
-homey api flow get-advanced-flows --json \
-  --jq 'to_entries | map(select(.value.enabled == false) | {id: .key, name: .value.name})'
-```
-
-## Bulk operations
-
-### Disable all flows in a folder
-
-```bash
-FOLDER_ID="<folder-id>"
-for id in $(homey api flow get-advanced-flows --json \
-  --jq --arg f "$FOLDER_ID" 'to_entries[] | select(.value.folder == $f) | .key' | tr -d '"'); do
-  echo "Disabling $id"
-  CURRENT=$(homey api flow get-advanced-flow --id "$id" --json)
-  echo "$CURRENT" | jq '.enabled = false' > "/tmp/disable-$id.json"
-  homey api flow update-advanced-flow --id "$id" --body @"/tmp/disable-$id.json"
-done
-```
-
-### Set a capability on every device of a class
-
-Example: turn off every light.
-
-```bash
-for id in $(homey api devices get-devices --json \
-  --jq 'to_entries[] | select(.value.class == "light") | .key' | tr -d '"'); do
-  homey api devices set-capability-value \
-    --device-id "$id" --capability-id onoff --body 'false' --request-json
-done
-```
-
-### Move every device with a name suffix to a target zone
-
-```bash
-SUFFIX="-Kitchen"
-ZONE_ID="<kitchen-zone-id>"
-for id in $(homey api devices get-devices --json \
-  --jq --arg s "$SUFFIX" 'to_entries[] | select(.value.name | endswith($s)) | .key' | tr -d '"'); do
-  homey api devices update-device --id "$id" --body "{\"zone\":\"$ZONE_ID\"}"
-done
-```
-
-## Search
-
-### Find every flow that references a specific device
-
-```bash
-DEVICE_ID="<device-id>"
-homey api flow get-advanced-flows --json \
-  --jq --arg d "$DEVICE_ID" '
-    to_entries | map(select(
-      .value.cards | to_entries | any(.value.ownerUri == "homey:device:" + $d)
-      or (.value | tostring | contains($d))
-    )) | map({id: .key, name: .value.name})
-  '
-```
-
-### Find all devices in a zone (by zone name)
-
-```bash
-ZONE_NAME="Kitchen"
-homey api devices get-devices --json \
-  --jq --arg z "$ZONE_NAME" 'to_entries | map(select(.value.zoneName == $z) | {id: .key, name: .value.name, class: .value.class})'
-```
-
-### Find devices missing capabilities (likely offline)
-
-```bash
-homey api devices get-devices --json \
-  --jq 'to_entries | map(select(.value.available == false) | {id: .key, name: .value.name, zone: .value.zoneName})'
-```
-
-### Search flow card definitions
-
-```bash
-KEYWORD="play"
-homey api flow get-flow-card-actions --json \
-  --jq --arg k "$KEYWORD" '.[] | select(.title | test($k; "i")) | {id, title, ownerUri}'
-```
-
-## Discovery shortcuts
-
-### List installed apps from a specific vendor
-
-```bash
-VENDOR="com.sonos"
-homey api apps get-apps --json \
-  --jq --arg v "$VENDOR" 'to_entries | map(select(.key | startswith($v)) | {id: .key, name: .value.name, version: .value.version})'
-```
-
-### List capabilities for a device
-
-```bash
-DEVICE_ID="<id>"
-homey api devices get-device --id "$DEVICE_ID" --json \
-  --jq '.capabilitiesObj | keys'
-```
-
-### Discover all flow card actions provided by one app
-
-```bash
-APP="com.sonos"
-homey api flow get-flow-card-actions --json \
-  --jq --arg a "$APP" '.[] | select(.ownerUri | startswith("homey:app:" + $a)) | {id, title, args}'
-```
-
-### Count flow cards per app (which apps contribute the most automation surface)
-
-```bash
-homey api flow get-flow-card-actions --json \
-  --jq 'group_by(.ownerUri) | map({owner: .[0].ownerUri, count: length}) | sort_by(-.count) | .[0:20]'
-```
+Fetch current flows and device/zone inventories with explicit ID. Inspect ownerUri, card IDs and typed arguments when resolving references; a raw substring match is only a search aid.
+Before bulk changes, show the exact affected items and expected effect. Back up each persistent resource and verify each result; stop on the first failure. Never run a broad loop based on guessed names or classes.

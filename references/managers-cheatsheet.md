@@ -1,10 +1,12 @@
 # Managers Cheatsheet
 
-`homey api` exposes the Homey local API as ~50 managers. Each manager has its own `schema` command for live introspection — this cheatsheet covers the commonly-used ones with their top operations.
+Append the verified --homey-id to every API call below. These command names are a discovery aid: confirm installed help/schema before use. Translate Bash examples on Windows; see recipes.md.
+
+`homey api` exposes the Homey local API as ~50 managers. Use `homey api schema --manager <manager> --json` for live introspection — this cheatsheet covers the commonly-used ones with their top operations.
 
 To list every manager: `homey api --help`.
 To list every op for a manager: `homey api <manager> --help`.
-To dump a manager's full schema: `homey api <manager> schema`.
+To dump a manager's full schema: `homey api schema --manager <manager> --json`.
 
 ## Contents
 
@@ -190,7 +192,7 @@ homey api zwave  get-state --json
 homey api matter get-nodes --json
 ```
 
-For deep inspection use `<manager> schema` to discover all ops.
+For deep inspection use `homey api schema --manager <manager> --json`.
 
 ## raw — escape hatch
 

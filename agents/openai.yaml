@@ -1,0 +1,4 @@
+interface:
+  display_name: "Homey CLI"
+  short_description: "Inspect Homey and build validated local automations"
+  default_prompt: "Use $homey-cli to inspect my Homey Pro and suggest automations."
